@@ -18,34 +18,81 @@ This is not a single prompt → single response pattern. It is a custom multi-st
 
 ## Pipeline Architecture
 
+The pipeline adapts based on input type (`inputSource` field: `text`, `voice`, or `image`).
+
+**Text input** (most common):
 ```
-User input (text or voice)
+User types input
         │
         ▼
-  [S1 - Normalize]          ← clean input: typos, mixed languages, voice artifacts
-        │
+  [S2 - Extract]             ← text → structured task JSON (title, date, who, recurring, etc.)
+        │                       sets is_ambiguous flag if input unclear
         ▼
-  [S2 - Extract] ──────┐    ← text → structured task schema (who, when, recurring?)
-                        │         sets is_ambiguous flag if input unclear
-  [S7 - Title]  ────────┘    ← clean task title (runs in parallel with S2)
-        │
-        ▼
-  [S3 - Disambiguate]        ← conditional: only runs if S2 set is_ambiguous=true
+  [S3 - Disambiguate]        ← conditional: only if S2 set is_ambiguous=true
         │                       generates a clarifying question shown to the user
         ▼
-  [S4 - Conflict Detection]  ← check against existing tasks/schedule
+  [S4 - Conflict Alert]      ← conditional: only if conflicts detected against existing tasks
         │
         ▼
   Structured task (JSON)
 ```
 
-S2 and S7 run in parallel to minimize latency. Each step runs as a separate call within the Edge Function pipeline.
+**Voice input:**
+```
+User speaks
+        │
+        ▼
+  [S1 - Normalize]           ← clean ASR artifacts: stuttering, mixed languages, phonetic errors
+        │
+        ▼
+  [S2 - Extract] → [S3] → [S4] (same as text path above)
+```
+
+**Image input:**
+```
+User attaches photo (receipt, whiteboard, note)
+        │
+        ▼
+  [Gemini Vision]            ← extracts task text from image
+        │
+        ▼
+  [S2 - Extract] → [S3] → [S4] (same as text path above)
+```
+
+S1 runs only for voice input - text input goes straight to S2. This reduces API calls by ~66% for the common text case compared to earlier versions where S1 and a separate title-generation step ran unconditionally.
 
 ---
 
 ## Model Routing
 
-Currently the pipeline uses one AI provider. Each step has a primary model and a fallback - if the primary returns an error (rate limit, timeout), the fallback is called automatically. The routing layer is designed to support multiple providers per step; multi-provider routing is planned as the product scales.
+Each pipeline step has a primary model and a Gemini-level fallback. If the primary returns a rate-limit or server error, the fallback is called automatically.
+
+If all Gemini models fail (daily quota exhausted or provider outage), the pipeline falls back to **Groq (llama-3.3-70b-versatile)** as an emergency provider. This keeps the feature available even during Gemini downtime.
+
+```
+Step request
+    │
+    ▼
+Primary Gemini model
+    │ (429 / 5xx)
+    ▼
+Fallback Gemini model
+    │ (also fails)
+    ▼
+Groq emergency fallback
+    │ (also fails)
+    ▼
+Error returned to user
+```
+
+Current model assignments:
+
+| Step | Primary | Fallback |
+|------|---------|----------|
+| S1 Normalize (voice) | gemini-2.5-flash-lite | gemini-2.5-flash |
+| S2 Extract | gemini-2.5-flash | gemini-2.5-flash-lite |
+| S3 Disambiguate | gemini-2.5-flash | gemini-2.5-flash-lite |
+| S4 Conflict Alert | gemini-2.5-flash-lite | gemini-2.5-flash |
 
 ---
 
@@ -69,7 +116,7 @@ Voice input features:
 
 Every pipeline execution generates a trace stored server-side:
 - Per-step latency
-- Model tier used per step (primary or fallback)
+- Model tier used per step (primary, fallback, or groq-emergency)
 - Output preview per step
 - Error and fallback events
 - A `run_id` returned to the client for support queries
@@ -80,9 +127,9 @@ Trace data is collected from day one. A dashboard to browse and analyze traces i
 
 ## Eval Suite
 
-The pipeline has an automated evaluation suite: 40 input/expected pairs across 8 categories (basic, time extraction, recurring tasks, date, priority, all-day, multilingual, complex). Runs weekly on CI with accuracy gates: overall >= 85%, critical categories (recurring, time) >= 80%.
+The pipeline has an automated evaluation suite: 40 input/expected pairs across 8 categories (basic, time extraction, recurring tasks, date, priority, all-day, multilingual, complex). Accuracy gates: overall >= 85%, critical categories (recurring, time) >= 80%.
 
-This means prompt changes are validated against known-good outputs before reaching production.
+The suite is triggered manually via `workflow_dispatch` in CI. Scheduled weekly runs are disabled until a paid AI API plan is in place - running 40 cases hits free-tier rate limits.
 
 ---
 
