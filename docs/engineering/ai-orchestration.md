@@ -96,6 +96,18 @@ Current model assignments:
 
 ---
 
+## Model Configuration Policy
+
+Model behavior is controlled through a shared registry (`_shared/models.ts`). Each model role carries explicit configuration — including `thinkingBudget` — so behavior is never inherited from model defaults unexpectedly.
+
+**Thinking tokens** are disabled (`thinkingBudget: 0`) for all current pipeline steps. The reasoning: S1–S4 and S7 are extraction and normalization tasks with a fixed output schema. Thinking adds latency without improving output quality on structured, deterministic tasks.
+
+Thinking will be enabled explicitly for future reasoning-heavy features (route optimization, schedule analysis) where a large solution space makes internal reasoning genuinely useful. Those steps will use a bounded, explicitly set budget rather than a model default.
+
+See [ADR-005](../architecture/adr-005-gemini-thinking-budget.md) for the full decision record.
+
+---
+
 ## Voice Input: Three-Path STT
 
 Speech-to-text follows a fallback chain:
