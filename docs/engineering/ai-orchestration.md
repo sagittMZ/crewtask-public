@@ -67,7 +67,7 @@ S1 runs only for voice input - text input goes straight to S2. This reduces API 
 
 Each pipeline step has a primary model and a Gemini-level fallback. If the primary returns a rate-limit or server error, the fallback is called automatically.
 
-If all Gemini models fail (daily quota exhausted or provider outage), the pipeline falls back to **Groq (llama-3.3-70b-versatile)** as an emergency provider. This keeps the feature available even during Gemini downtime.
+If all Gemini models fail (daily quota exhausted or provider outage), the pipeline falls back to **Groq (openai/gpt-oss-120b)** as an emergency provider. This keeps the feature available even during Gemini downtime.
 
 ```
 Step request
@@ -96,13 +96,24 @@ Current model assignments:
 
 ---
 
-## Voice Input: Three-Path STT
+## Model Configuration Policy
+
+Model behavior is controlled through a shared registry (`_shared/models.ts`). Each model role carries explicit configuration - including `thinkingBudget` - so behavior is never inherited from model defaults unexpectedly.
+
+**Thinking tokens** are disabled (`thinkingBudget: 0`) for all current pipeline steps. The reasoning: S1-S4 and S7 are extraction and normalization tasks with a fixed output schema. Thinking adds latency without improving output quality on structured, deterministic tasks.
+
+Thinking will be enabled explicitly for future reasoning-heavy features (route optimization, schedule analysis) where a large solution space makes internal reasoning genuinely useful. Those steps will use a bounded, explicitly set budget rather than a model default.
+
+See [ADR-005](../architecture/adr-005-gemini-thinking-budget.md) for the full decision record.
+
+---
+
+## Voice Input: Two-Path STT
 
 Speech-to-text follows a fallback chain:
 
-1. **Native STT** (Android/iOS system) - lowest latency
-2. **Web Speech API** (Chrome/browsers) - web fallback
-3. **Audio transcription via Edge Function** - for devices where neither option is available; records audio client-side (MediaRecorder API), sends to Edge Function, returns transcript
+1. **Web Speech API** (streaming) - primary path. Inside the Android app the WebView routes it to the device's own speech recognizer, so this is the native engine with no extra latency; in a browser it is the browser's engine. Cumulative results from some vendors' engines (for example Xiaomi/MIUI) are merged by overlap, not appended, to avoid duplicated phrases.
+2. **Audio transcription via Edge Function** - fallback when Web Speech is unavailable or fails mid-session. Audio is recorded client-side (MediaRecorder API) and sent to the `transcribe-audio` Edge Function, which returns a transcript from the audio-capable Gemini model in the shared registry.
 
 Voice input features:
 - Auto-restart on silence (Voice Activity Detection, 7-second threshold)
@@ -127,9 +138,9 @@ Trace data is collected from day one. A dashboard to browse and analyze traces i
 
 ## Eval Suite
 
-The pipeline has an automated evaluation suite: 40 input/expected pairs across 8 categories (basic, time extraction, recurring tasks, date, priority, all-day, multilingual, complex). Accuracy gates: overall >= 85%, critical categories (recurring, time) >= 80%.
+The pipeline has an automated evaluation suite: 47 input/expected pairs across 11 categories (basic, time extraction, date, recurring tasks, priority, all-day, multilingual, complex, multitask, checklist, missing fields). The "missing" category checks that a date or assignee the user never mentioned stays `null` instead of being invented. Accuracy gates: overall >= 85%, critical categories (recurring, time) >= 80%.
 
-The suite is triggered manually via `workflow_dispatch` in CI. Scheduled weekly runs are disabled until a paid AI API plan is in place - running 40 cases hits free-tier rate limits.
+The suite is triggered manually via `workflow_dispatch` in CI before pipeline changes ship; scheduled runs are disabled for now.
 
 ---
 

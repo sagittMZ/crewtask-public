@@ -72,7 +72,7 @@ Evaluated whether to embed session tokens directly in email links for instant lo
 
 **App Links architecture:**
 - AndroidManifest: `autoVerify="true"` for `https://crewtask.app` (all paths)
-- `public/.well-known/assetlinks.json`: debug SHA256 present; release SHA256 to be added from Play Console after signing key is generated
+- `public/.well-known/assetlinks.json`: both the debug and the Play App Signing release SHA256 fingerprints are present
 - All internal links (shortcuts, emails, push notification action URLs) use `https://crewtask.app` - no www, no custom scheme
 
 **Deep link routing:**
@@ -96,8 +96,8 @@ Evaluated whether to embed session tokens directly in email links for instant lo
 - Email "View task" links open the app on devices with the app installed
 - Single domain (`crewtask.app`) used consistently across all link-generating surfaces
 
-**Pending:**
-- Release SHA256 must be added to `assetlinks.json` before Google Play release. Without it, App Links work only on debug builds (signed with the debug keystore whose fingerprint is already present). Path: Play Console → Release → Setup → App signing → SHA-256 certificate fingerprint.
+**Resolved since:**
+- The release SHA256 from Play Console (Release → Setup → App signing) was added to `assetlinks.json` before the Google Play release, so App Links verify on store builds as well as debug builds.
 
 **Trade-offs:**
 - Module-level `launchUrlHandled` flag is a side effect outside React's lifecycle. It resets only on full app restart (JS bundle reload), which is the correct behavior for "cold start URL, handle once." Unit tests require `vi.resetModules()` in `beforeEach` to get a fresh module instance per test.

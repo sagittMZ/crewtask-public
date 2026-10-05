@@ -43,8 +43,8 @@ Managing a household with kids is a coordination problem. Tasks come from everyw
 
 ## Architecture
 
-- **[Architecture Decisions](docs/public/architecture/)** - why we chose Supabase over a custom backend, Capacitor over React Native, offline-first via TanStack Query
-- **[Engineering](docs/public/engineering/)** - how the AI orchestration pipeline and offline sync work
+- **[Architecture Decisions](docs/architecture/)** - why we chose Supabase over a custom backend, Capacitor over React Native, offline-first via TanStack Query
+- **[Engineering](docs/engineering/)** - how the AI orchestration pipeline and offline sync work
 - **[Changelog](CHANGELOG.md)** - feature history in human-readable format
 
 ---
